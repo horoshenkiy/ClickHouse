@@ -159,9 +159,26 @@ MergeTreeData::MergeTreeData(
     {
         sampling_expr_column_name = sample_by_ast->getColumnName();
 
-        if (!primary_key_sample.has(sampling_expr_column_name)
-            && !attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
-            throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+        if (!primary_key_sample.has(sampling_expr_column_name))
+        {
+            /// This is for backward compatibility.
+            if (!attach && !settings->compatibility_allow_sampling_expression_not_in_primary_key)
+                throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+        }
+        else
+        {
+            auto &sample_by_column = primary_key_sample.getByName(sampling_expr_column_name);
+            if (sample_by_column.type &&
+                sample_by_column.type->getTypeId() != TypeIndex::UInt8 &&
+                sample_by_column.type->getTypeId() != TypeIndex::UInt16 &&
+                sample_by_column.type->getTypeId() != TypeIndex::UInt32 &&
+                sample_by_column.type->getTypeId() != TypeIndex::UInt64
+            )
+                throw Exception(
+                        "Invalid sampling column type in storage parameters. Must be unsigned integer type.",
+                        ErrorCodes::BAD_ARGUMENTS
+                    );
+        }
 
         auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
         columns_required_for_sampling = syntax->requiredSourceColumns();
